@@ -1,0 +1,2 @@
+selenium==4.23.0
+pyairtable==2.3.3

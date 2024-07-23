@@ -5,15 +5,18 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from datetime import datetime, timedelta
+from selenium.webdriver.chrome.service import Service
 import os
 import time
 import shutil
 from selenium import webdriver
 from selenium.webdriver.support.ui import Select
-
+from selenium.common.exceptions import TimeoutException
+import glob
 
 class NeuroBlastBot():
     def __init__(self, chrome_driver : webdriver.Chrome, options = webdriver.ChromeOptions) -> None:
+        self.download_dir = os.path.join(os.getcwd(), 'csv_reports')
         self.driver = chrome_driver
 
     def get_base_url(self):
@@ -55,54 +58,92 @@ class NeuroBlastBot():
         element = wait.until(EC.element_to_be_clickable((By.ID, 'ctl00_ctl00_bodyContent_ContentPlaceHolder_ddlModule')))
         select = Select(element)
         options = [option.text for option in select.options]
-
-        for option_text in options:
-            
-            # Re-fetching the select element since it goes stale every loop
+        print("Total Options : ", len(options), "Options are : ", options)
+        for option_text in options[1:]:
             select_element = wait.until(EC.presence_of_element_located((By.ID, 'ctl00_ctl00_bodyContent_ContentPlaceHolder_ddlModule')))
             select = Select(select_element)
-
-            # Selecting each value that the selectboc has availaible.
             select.select_by_visible_text(option_text)
-
-            # This is where the download and processing options will sit
             print(f"Selected option: {option_text}")
-            self.set_date_range()
+            date_passed = self.set_date_range()
+            if date_passed:
+                print(f'{option_text} is a Date Passable element')
 
-
-
+            self.process_downloads()
+            self.handle_new_file(f"{option_text}.csv")
             time.sleep(2)
 
     def set_date_range(self):
         start_date = (datetime.now() - timedelta(days=1)).strftime("%d/%m/%Y")
         end_date = datetime.now().strftime("%d/%m/%Y")
+        try:
+            wait = WebDriverWait(self.driver, 10)
+            wait.until(
+                EC.presence_of_element_located(
+                    (By.ID, "ctl00_ctl00_bodyContent_ContentPlaceHolder_dpStartDate_txtDate")
+                )
+            ).clear()
+            self.driver.find_element(
+                By.ID, "ctl00_ctl00_bodyContent_ContentPlaceHolder_dpStartDate_txtDate"
+            ).send_keys(start_date)
+
+            wait.until(
+                EC.presence_of_element_located(
+                    (By.ID, "ctl00_ctl00_bodyContent_ContentPlaceHolder_dpEndDate_txtDate")
+                )
+            ).clear()
+            self.driver.find_element(
+                By.ID, "ctl00_ctl00_bodyContent_ContentPlaceHolder_dpEndDate_txtDate"
+            ).send_keys(end_date)
+
+            head_element = self.driver.find_element(By.CSS_SELECTOR, "#managerContent > div.managerPage > h1")
+            head_element.click()
+
+            return True
+        except TimeoutException:
+            return False
+
+    def process_downloads(self):
         wait = WebDriverWait(self.driver, 10)
         wait.until(
-            EC.presence_of_element_located(
-                (By.ID, "ctl00_ctl00_bodyContent_ContentPlaceHolder_dpStartDate_txtDate")
-            )
-        ).clear()
-        self.driver.find_element(
-            By.ID, "ctl00_ctl00_bodyContent_ContentPlaceHolder_dpStartDate_txtDate"
-        ).send_keys(start_date)
-
-        wait.until(
-            EC.presence_of_element_located(
-                (By.ID, "ctl00_ctl00_bodyContent_ContentPlaceHolder_dpEndDate_txtDate")
-            )
-        ).clear()
-        self.driver.find_element(
-            By.ID, "ctl00_ctl00_bodyContent_ContentPlaceHolder_dpEndDate_txtDate"
-        ).send_keys(end_date)
-
-    def process_downloads(self, option_text):
-        
+        EC.presence_of_element_located(
+            (By.ID, "ctl00_ctl00_bodyContent_ContentPlaceHolder_lnkbtnDownload")
+        )
+        ).click()
         pass
 
+    def airtable_upsert(self, latest_file,new_filename):
+        print("Handling Airtable Upsert")
+    
+    def handle_new_file(self,new_filename):
+        latest_file = None
+        while latest_file is None:
+            time.sleep(2)  
+            list_of_files = glob.glob(os.path.join(self.download_dir, '*'))
+            latest_file = max(list_of_files, key=os.path.getctime) if list_of_files else None
+
+        # Perform the desired action with the new file
+        self.airtable_upsert(latest_file, new_filename)
+
+        # Rename the new file
+        new_file_path = os.path.join(self.download_dir, new_filename)
+        os.rename(latest_file, new_file_path)
+
+        return new_file_path
 
 if __name__ == "__main__":
-    options = webdriver.ChromeOptions()
-    chrome_driver = webdriver.Chrome()
+    download_dir = os.path.join(os.getcwd(), 'csv_reports')
+    if not os.path.exists(download_dir):
+        os.makedirs(download_dir)
+
+    chrome_options = Options()
+    chrome_options.add_experimental_option("prefs", {
+        "download.default_directory": download_dir,  # Set the default download directory
+        "download.prompt_for_download": False,       # Disable download prompt
+        "download.directory_upgrade": True,          # Allow directory upgrade
+        "safebrowsing.enabled": True                 # Enable safe browsing
+    })
+
+    chrome_driver = webdriver.Chrome(options=chrome_options)
     chrome_driver.implicitly_wait(60)
     bot = NeuroBlastBot(chrome_driver)
     bot.get_base_url()
