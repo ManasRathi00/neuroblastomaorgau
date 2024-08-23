@@ -13,6 +13,7 @@ from selenium import webdriver
 from selenium.webdriver.support.ui import Select
 from selenium.common.exceptions import TimeoutException
 import glob
+from airtable_helper.upsert import upsert_csv_to_airtable
 
 class NeuroBlastBot():
     def __init__(self, chrome_driver : webdriver.Chrome, options = webdriver.ChromeOptions) -> None:
@@ -111,9 +112,38 @@ class NeuroBlastBot():
         ).click()
         pass
 
-    def airtable_upsert(self, latest_file,new_filename):
-        print("Handling Airtable Upsert")
+    def process_csv_files(self):
+        # List to store CSV file paths
+        csv_files = []
+        csv_reports_directory = os.path.join(os.getcwd(), 'csv_reports')
+        # Walk through the directory
+        for root, dirs, files in os.walk(csv_reports_directory):
+            for file in files:
+                if file.endswith(".csv"):
+                    # Get the full file path
+                    file_path = os.path.join(root, file)
+                    csv_files.append(file_path)
+        
+        # Loop over each CSV file and perform your processing
+        for csv_file in csv_files:
+            upsert_csv_to_airtable(csv_file_path=csv_file)
+            # Call your function to process each CSV file
+            # For example: upsert_csv_to_airtable(csv_file, airtable_base_id, api_key, primary_key)
+        
+        return csv_files
     
+    def empty_csv_reports_directory(self):
+        # Use glob to find all .csv files in the directory
+        csv_reports_directory = os.path.join(os.getcwd(), 'csv_reports')
+        csv_files = glob.glob(os.path.join(csv_reports_directory, "*.csv"))
+        
+        # Loop over each file and remove it
+        for csv_file in csv_files:
+            try:
+                os.remove(csv_file)
+                print(f"Deleted file: {csv_file}")
+            except OSError as e:
+                print(f"Error deleting file {csv_file}: {e}")
     def handle_new_file(self,new_filename):
         latest_file = None
         while latest_file is None:
@@ -122,7 +152,7 @@ class NeuroBlastBot():
             latest_file = max(list_of_files, key=os.path.getctime) if list_of_files else None
 
         # Perform the desired action with the new file
-        self.airtable_upsert(latest_file, new_filename)
+        
 
         # Rename the new file
         new_file_path = os.path.join(self.download_dir, new_filename)
@@ -146,6 +176,8 @@ if __name__ == "__main__":
     chrome_driver = webdriver.Chrome(options=chrome_options)
     chrome_driver.implicitly_wait(60)
     bot = NeuroBlastBot(chrome_driver)
-    bot.get_base_url()
-    bot.login()
-    bot.scroll_through_options()
+    # bot.get_base_url()
+    # bot.login()
+    # bot.empty_csv_reports_directory()
+    # bot.scroll_through_options()    
+    bot.process_csv_files()

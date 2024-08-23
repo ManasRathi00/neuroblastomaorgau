@@ -1,2 +1,4 @@
 selenium==4.23.0
 pyairtable==2.3.3
+pandas==2.2.2
+python-dotenv
